@@ -26,14 +26,15 @@ body {
 
 .app-container {
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 16px;
   background:
-    linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.6)),
+    linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.8)),
     url('/bg.png') center/cover no-repeat fixed;
   position: relative;
 }
@@ -82,11 +83,12 @@ input {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 12px;
   color: white;
   font-size: 1rem;
   outline: none;
   transition: all 0.3s ease;
+  width: 100%;
 }
 
 input:focus {
@@ -97,8 +99,108 @@ input:focus {
 
 .time-inputs {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(3, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 450px) {
+  .app-container {
+    padding: 12px;
+  }
+
+  .glass-card {
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    margin-bottom: 12px;
+  }
+
+  /* Time inputs optimization */
+  .time-inputs {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .ampm-toggle {
+    grid-column: span 3;
+    width: 100%;
+    margin-top: 4px;
+    height: 48px;
+    /* Larger touch target */
+  }
+
+  .ampm-btn {
+    flex: 1;
+    font-size: 1rem;
+  }
+
+  /* Input fields larger text/touch */
+  input {
+    font-size: 16px;
+    /* Prevents iOS zoom */
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .btn-primary {
+    padding: 18px;
+    font-size: 1.1rem;
+  }
+
+  .speed-value {
+    font-size: 3.5rem;
+  }
+
+  .stat-grid {
+    gap: 12px;
+  }
+}
+
+.ampm-toggle {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  display: flex;
+  overflow: hidden;
+  height: 46px;
+  min-width: 90px;
+}
+
+.ampm-btn {
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.ampm-btn.active {
+  background: var(--primary);
+  color: var(--bg-dark);
+}
+
+.map-wrapper {
+  margin-top: 24px;
+  height: 200px;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  position: relative;
+  z-index: 1;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
 }
 
 .btn-primary {
@@ -208,6 +310,59 @@ input:focus {
     transform: scale(0.8);
     box-shadow: 0 0 0 0 rgba(0, 242, 255, 0);
   }
+}
+
+.suggestions-container {
+  position: relative;
+  width: 100%;
+}
+
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  backdrop-filter: blur(30px);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  list-style: none;
+}
+
+.suggestion-item {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 0.9rem;
+  transition: background 0.2s;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover {
+  background: rgba(0, 242, 255, 0.1);
+}
+
+.setup-map {
+  height: 150px;
+  width: 100%;
+  border-radius: 12px;
+  margin-top: 8px;
+  border: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.map-hint {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 4px;
 }
 
 .btn-stop {
