@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Clock, Navigation, RotateCw, StopCircle, Play, Search, Map as MapIcon } from 'lucide-react';
+import { MapPin, Clock, Navigation, RotateCw, StopCircle, Play, Search, Map as MapIcon, Star, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Polyline, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -43,6 +43,7 @@ function App() {
   const [suggestions, setSuggestions] = useState([]);
   const [arrivalTime, setArrivalTime] = useState({ hh: '', mm: '', ss: '', ampm: 'PM' });
   const [currentPos, setCurrentPos] = useState({ lat: 34.0522, lon: -118.2437 }); // Default LA
+  const [currentAddress, setCurrentAddress] = useState('');
   const [destCoords, setDestCoords] = useState(null);
   const [routePolyline, setRoutePolyline] = useState([]);
   const [distance, setDistance] = useState(0);
@@ -53,18 +54,64 @@ function App() {
   const [error, setError] = useState(null);
   const [showSetupMap, setShowSetupMap] = useState(false);
 
+  // History State
+  const [savedDestinations, setSavedDestinations] = useState([]);
+  const [recentDestinations, setRecentDestinations] = useState([]);
+
   const watchId = useRef(null);
   const refreshTimer = useRef(null);
   const countdownTimer = useRef(null);
   const suggestionTimeout = useRef(null);
 
+  // Initialize Data
   useEffect(() => {
+    // 1. Get Location & Reverse Geocode
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setCurrentPos({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        async (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          setCurrentPos({ lat, lon });
+
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+            const data = await res.json();
+            const addr = data.address;
+            const shortAddr = [addr.house_number, addr.road, addr.city || addr.town].filter(Boolean).join(' ');
+            setCurrentAddress(shortAddr || "Current Location Detected");
+          } catch (e) {
+            setCurrentAddress("Current Location Detected");
+          }
+        },
         (err) => console.log("Using default location.")
       );
     }
+
+    // 2. Smart Time Prepopulation (Next Hour + 5s)
+    const now = new Date();
+    // Move to next hour
+    now.setHours(now.getHours() + 1);
+    now.setMinutes(0);
+    now.setSeconds(5);
+
+    let hours = now.getHours();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+
+    setArrivalTime({
+      hh: hours.toString(),
+      mm: '00',
+      ss: '05',
+      ampm: ampm
+    });
+
+    // 3. Load History
+    const saved = localStorage.getItem('driveTimer_saved');
+    const recent = localStorage.getItem('driveTimer_recent');
+    if (saved) setSavedDestinations(JSON.parse(saved));
+    if (recent) setRecentDestinations(JSON.parse(recent));
+
     return () => {
       clearInterval(refreshTimer.current);
       clearTimeout(refreshTimer.current);
@@ -87,6 +134,36 @@ function App() {
       setSuggestions([]);
     }
   }, [destination, destCoords]);
+
+  const addToRecent = (name, coords) => {
+    const newItem = { name, coords, id: Date.now() };
+    // Remove if duplicate name
+    const filtered = recentDestinations.filter(i => i.name !== name);
+    const updated = [newItem, ...filtered].slice(0, 5); // Keep top 5
+    setRecentDestinations(updated);
+    localStorage.setItem('driveTimer_recent', JSON.stringify(updated));
+  };
+
+  const saveDestination = () => {
+    if (!destination || !destCoords) return;
+    const newItem = { name: destination, coords: destCoords, id: Date.now() };
+    const updated = [...savedDestinations, newItem];
+    setSavedDestinations(updated);
+    localStorage.setItem('driveTimer_saved', JSON.stringify(updated));
+  };
+
+  const removeSaved = (e, id) => {
+    e.stopPropagation();
+    const updated = savedDestinations.filter(i => i.id !== id);
+    setSavedDestinations(updated);
+    localStorage.setItem('driveTimer_saved', JSON.stringify(updated));
+  };
+
+  const loadHistoryItem = (item) => {
+    setDestination(item.name);
+    setDestCoords(item.coords);
+    setShowSetupMap(false);
+  };
 
   const handleSuggestionClick = (s) => {
     setDestination(s.display_name);
@@ -134,7 +211,12 @@ function App() {
 
     const target = new Date();
     target.setHours(hours, minutes, seconds, 0);
-    if (target <= now) target.setDate(target.getDate() + 1);
+
+    // If target is in the past (e.g. it's 11:50PM and user sets 12:05AM), add a day.
+    // The previous simple check (target <= now) works for same day past, but for transition to tomorrow:
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1);
+    }
     return target;
   };
 
@@ -153,6 +235,9 @@ function App() {
           throw new Error("Address not found.");
         }
       }
+
+      // Save to recent
+      addToRecent(destination, finalDest);
 
       const target = calculateTargetTime();
       const dist = await getRouteData(currentPos, finalDest);
@@ -217,9 +302,16 @@ function App() {
           <motion.div key="setup" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-card">
             <h1>DRIVING TIMER</h1>
 
+            {currentAddress && (
+              <div className="current-location-display">
+                <MapPin size={12} className="icon-pulse" />
+                <span>{currentAddress}</span>
+              </div>
+            )}
+
             <div className="input-group">
               <label style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span><MapPin size={14} /> Destination</span>
+                <span>Destination</span>
                 <button
                   onClick={() => setShowSetupMap(!showSetupMap)}
                   style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.7rem' }}
@@ -228,23 +320,53 @@ function App() {
                 </button>
               </label>
 
-              <div className="suggestions-container">
-                <input
-                  type="text"
-                  placeholder="Street, City, or Zip..."
-                  value={destination}
-                  onChange={(e) => { setDestination(e.target.value); setDestCoords(null); }}
-                />
-                {suggestions.length > 0 && (
-                  <ul className="suggestions-list">
-                    {suggestions.map((s, i) => (
-                      <li key={i} className="suggestion-item" onClick={() => handleSuggestionClick(s)}>
-                        {s.display_name}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div className="destination-row">
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <div className="suggestions-container">
+                    <input
+                      type="text"
+                      placeholder="Street, City, or Zip..."
+                      value={destination}
+                      onChange={(e) => { setDestination(e.target.value); setDestCoords(null); }}
+                    />
+                    {suggestions.length > 0 && (
+                      <ul className="suggestions-list">
+                        {suggestions.map((s, i) => (
+                          <li key={i} className="suggestion-item" onClick={() => handleSuggestionClick(s)}>
+                            {s.display_name}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+                <button
+                  className="save-btn"
+                  onClick={saveDestination}
+                  title="Save Destination"
+                  disabled={!destination || !destCoords}
+                >
+                  <Star size={18} />
+                </button>
               </div>
+
+              {(savedDestinations.length > 0 || recentDestinations.length > 0) && (
+                <div className="history-pills">
+                  {savedDestinations.map(item => (
+                    <div key={item.id} className="history-pill saved" onClick={() => loadHistoryItem(item)}>
+                      <Star size={10} fill="currentColor" />
+                      <span>{item.name.split(',')[0]}</span>
+                      <span className="remove-pill" onClick={(e) => removeSaved(e, item.id)}>×</span>
+                    </div>
+                  ))}
+                  {recentDestinations.map(item => (
+                    <div key={item.id} className="history-pill recent" onClick={() => loadHistoryItem(item)}>
+                      <History size={10} />
+                      <span>{item.name.split(',')[0]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {showSetupMap && (
                 <>
