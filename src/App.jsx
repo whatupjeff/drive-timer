@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Clock, Navigation, RotateCw, StopCircle, Play, Search, Map as MapIcon, Star, History } from 'lucide-react';
+import { MapPin, Clock, Navigation, RotateCw, StopCircle, Play, Search, Map as MapIcon, Star, History, Settings } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapContainer, TileLayer, Polyline, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -46,8 +46,12 @@ function App() {
   const [currentAddress, setCurrentAddress] = useState('');
   const [destCoords, setDestCoords] = useState(null);
   const [routePolyline, setRoutePolyline] = useState([]);
-  const [distance, setDistance] = useState(0);
-  const [requiredSpeed, setRequiredSpeed] = useState(0);
+
+  // Units: 'imperial' (miles) or 'metric' (km)
+  const [units, setUnits] = useState('imperial');
+
+  const [distance, setDistance] = useState(0); // Always in km
+  const [requiredSpeed, setRequiredSpeed] = useState(0); // Always in km/h
   const [timeLeft, setTimeLeft] = useState(0);
   const [nextRefresh, setNextRefresh] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -62,6 +66,7 @@ function App() {
   const refreshTimer = useRef(null);
   const countdownTimer = useRef(null);
   const suggestionTimeout = useRef(null);
+  const arrivalTargetRef = useRef(null); // Ref to hold target time for async callbacks
 
   // Initialize Data
   useEffect(() => {
@@ -109,8 +114,10 @@ function App() {
     // 3. Load History
     const saved = localStorage.getItem('driveTimer_saved');
     const recent = localStorage.getItem('driveTimer_recent');
+    const savedUnits = localStorage.getItem('driveTimer_units');
     if (saved) setSavedDestinations(JSON.parse(saved));
     if (recent) setRecentDestinations(JSON.parse(recent));
+    if (savedUnits) setUnits(savedUnits);
 
     return () => {
       clearInterval(refreshTimer.current);
@@ -134,6 +141,26 @@ function App() {
       setSuggestions([]);
     }
   }, [destination, destCoords]);
+
+  const toggleUnits = () => {
+    const newUnits = units === 'imperial' ? 'metric' : 'imperial';
+    setUnits(newUnits);
+    localStorage.setItem('driveTimer_units', newUnits);
+  };
+
+  const getDistanceDisplay = (km) => {
+    if (units === 'imperial') {
+      return (km * 0.621371).toFixed(1) + ' mi';
+    }
+    return km.toFixed(1) + ' km';
+  };
+
+  const getSpeedDisplay = (kmh) => {
+    if (units === 'imperial') {
+      return { val: (kmh * 0.621371).toFixed(1), unit: 'MPH' };
+    }
+    return { val: kmh.toFixed(1), unit: 'KM/H' };
+  };
 
   const addToRecent = (name, coords) => {
     const newItem = { name, coords, id: Date.now() };
@@ -240,8 +267,20 @@ function App() {
       addToRecent(destination, finalDest);
 
       const target = calculateTargetTime();
+      arrivalTargetRef.current = target; // Store in ref for async access
+
       const dist = await getRouteData(currentPos, finalDest);
-      if (dist === 0) throw new Error("Could not calculate route.");
+      // dist is handled in getRouteData, fallback is 0 if error.
+      // We allow starting even if dist is 0, user might just want the timer.
+
+      // Initial speed calculation
+      const now = new Date();
+      const diff = Math.max(0, (target.getTime() - now.getTime()) / 1000);
+      setTimeLeft(diff);
+
+      if (diff > 0 && dist > 0) {
+        setRequiredSpeed(dist / (diff / 3600));
+      }
 
       setIsActive(true);
       startTracking(finalDest, target);
@@ -264,9 +303,18 @@ function App() {
       navigator.geolocation.getCurrentPosition(async (pos) => {
         const nowPos = { lat: pos.coords.latitude, lon: pos.coords.longitude };
         setCurrentPos(nowPos);
+
         const dist = await getRouteData(nowPos, targetCoords);
-        const remaining = (arrivalTarget.getTime() - new Date().getTime()) / 1000;
-        if (remaining > 0) setRequiredSpeed(dist / (remaining / 3600));
+
+        const now = new Date();
+        const remainingSeconds = (arrivalTarget.getTime() - now.getTime()) / 1000;
+
+        if (remainingSeconds > 0 && dist > 0) {
+          const speedKmh = dist / (remainingSeconds / 3600);
+          setRequiredSpeed(speedKmh);
+        } else {
+          setRequiredSpeed(0);
+        }
       });
 
       const remaining = (arrivalTarget.getTime() - new Date().getTime()) / 1000;
@@ -300,7 +348,16 @@ function App() {
       <AnimatePresence mode="wait">
         {!isActive ? (
           <motion.div key="setup" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-card">
-            <h1>DRIVING TIMER</h1>
+            <div style={{ position: 'relative' }}>
+              <h1>DRIVING TIMER</h1>
+              <div
+                className="unit-toggle"
+                onClick={toggleUnits}
+              >
+                <div className={`unit-option ${units === 'imperial' ? 'active' : ''}`}>mi</div>
+                <div className={`unit-option ${units === 'metric' ? 'active' : ''}`}>km</div>
+              </div>
+            </div>
 
             {currentAddress && (
               <div className="current-location-display">
@@ -406,8 +463,8 @@ function App() {
           <motion.div key="tracking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card tracking-view">
             <div className="speed-display">
               <label>REQUIRED SPEED</label>
-              <div className="speed-value">{requiredSpeed.toFixed(1)}</div>
-              <div className="speed-unit">KM/H</div>
+              <div className="speed-value">{getSpeedDisplay(requiredSpeed).val}</div>
+              <div className="speed-unit">{getSpeedDisplay(requiredSpeed).unit}</div>
             </div>
 
             <div className="stats-grid">
@@ -417,7 +474,7 @@ function App() {
               </div>
               <div className="stat-item">
                 <span className="stat-label">Distance</span>
-                <span className="stat-value">{distance.toFixed(1)} km</span>
+                <span className="stat-value">{getDistanceDisplay(distance)}</span>
               </div>
             </div>
 

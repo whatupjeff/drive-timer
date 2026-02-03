@@ -490,3 +490,34 @@ input:focus {
   background: rgba(255, 62, 62, 0.4);
   color: white;
 }
+
+/* Unit Toggle */
+.unit-toggle {
+  display: flex;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.unit-option {
+  padding: 4px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  transition: all 0.2s;
+}
+
+.unit-option.active {
+  background: var(--primary);
+  color: var(--bg-dark);
+}
+
+.unit-option:hover:not(.active) {
+  color: white;
+}
